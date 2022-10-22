@@ -18,7 +18,7 @@ namespace ShopifyTagUpdater
     {
         // Toggle if test mode console logs visible and if using production or sandbox
         private static bool testingMode = Convert.ToBoolean(ConfigurationManager.AppSettings["testMode"].ToString());
-        private static bool readValuesFromDB = Convert.ToBoolean(ConfigurationManager.AppSettings["readValuesFromDB"].ToString());
+        private static bool valuesFromDB = Convert.ToBoolean(ConfigurationManager.AppSettings["valuesFromDB"].ToString());
         static readonly bool ProductionAPIMode = Convert.ToBoolean(ConfigurationManager.AppSettings["useProductionAPI"].ToString());
 
         // Delay milliseconds to use to prevent reaching rate limit
@@ -81,7 +81,12 @@ namespace ShopifyTagUpdater
             }
 
             // Get products and tags for update
-            if (readValuesFromDB == false)
+            if (valuesFromDB == true)
+            {
+                // Read values from stored procedure
+                GetProductList();
+            }
+            else
             {
                 // Individual test values when no table/stored procedure to read products from
                 // VALUES: "shopify_product_id, add/remove action, tags"
@@ -95,16 +100,11 @@ namespace ShopifyTagUpdater
 
                 Dictionary<string, string> testDictionary2 = new Dictionary<string, string>()
                 {
-                    { "shopify_product_id", "6581631385735" },
+                    { "shopify_product_id", "987654321" },
                     { "action", "remove" },
-                    { "tags", "YBlocklist" }
+                    { "tags", "testTag" }
                 };
                 UpdateProductList.Add(testDictionary2);
-            }
-            else
-            {
-                // TODO: Remove from else when table/stored procedure to read products and tags to add/remove are created
-                GetProductList();
             }
 
             // GET EACH PRODUCT TO UPDATE TAGS
@@ -208,15 +208,14 @@ namespace ShopifyTagUpdater
                 }
                 else
                 {
-                    // Log error with getting product
-                    if (testingMode == false)
+                    // Log error with getting product to stored procedure or to console log
+                    if (valuesFromDB == true)
                     {
-                        // TODO: Remove from if/else once stored procedures created
                         LogUpdateTagsStatus(productInput["shopify_product_id"], statusInd, callStatus, errorMessage);
                     }
                     else
                     {
-                        Console.WriteLine(String.Format($"Test Log Update Here: {0}, {1}, {2}, {3}", productInput["shopify_product_id"], statusInd, callStatus, errorMessage));
+                        Console.WriteLine(String.Format($"Test Error Log for Getting products: {0}, {1}, {2}, {3}", productInput["shopify_product_id"], statusInd, callStatus, errorMessage));
                     }
                 }
 
@@ -242,8 +241,8 @@ namespace ShopifyTagUpdater
         // Make call to API and return json string
         public static async Task<string> CallApi(string section, string id, string method, string payload)
         {
-            // Production API Request URL Format: https://{API_KEY}:{PASSWORD}@loversonline.myshopify.com/admin/api/{VERSION}/{SECTION}/{ID}.json(?fields={FIELD1,FIELD2})
-            // Sandbox API Request URL Format: https://{API_KEY}:{PASSWORD}@lovers-sandbox.myshopify.com/admin/api/{VERSION}/{SECTION}/{ID}.json(?fields={FIELD1,FIELD2})
+            // Production API Request URL Format: https://{API_KEY}:{PASSWORD}@{SHOP_NAME}.myshopify.com/admin/api/{VERSION}/{SECTION}/{ID}.json(?fields={FIELD1,FIELD2})
+            // Sandbox API Request URL Format: https://{API_KEY}:{PASSWORD}@{SANDBOX_SHOP_NAME}.myshopify.com/admin/api/{VERSION}/{SECTION}/{ID}.json(?fields={FIELD1,FIELD2})
             RestClient client = new RestClient(apiHostString);
             client.Authenticator = new HttpBasicAuthenticator($"{apiKey}", $"{password}");
             RestRequest request;
@@ -257,7 +256,6 @@ namespace ShopifyTagUpdater
             else
             {
                 // GET API call that does not require payload
-                // TODO: Test that this works
                 if (getCallFields != "")
                 {
                     request = new RestRequest($"{apiVersion}/{section}{id}.json?fields={getCallFields}", Method.GET);
@@ -275,13 +273,19 @@ namespace ShopifyTagUpdater
             if (callStatus == "OK" || callStatus == "Created")
             {
                 statusInd = 1;
-                Console.WriteLine($"Successful call for Shopify product {id} {method} with payload {payload}");
+                if (testingMode == true)
+                {
+                    Console.WriteLine($"Successful call for Shopify product {id} {method} with payload {payload}");
+                }
             }
             else
             {
                 statusInd = 2;
                 CallErrorStatus = response.StatusDescription;
-                Console.WriteLine($"Error for Shopify product {id} {method}, Status Code: " + response.StatusDescription);
+                if (testingMode == true)
+                {
+                    Console.WriteLine($"Error for Shopify product {id} {method}, Status Code: " + response.StatusDescription);
+                }
             }
             return response.Content;
         }
@@ -375,8 +379,6 @@ namespace ShopifyTagUpdater
         }
 
         // Remove tags from string received from API call
-        // NOTE: Not used yet
-        // TODO: Check that this works
         private static string RemoveTags(Dictionary<string, string> productInput, string currentTags)
         {
             // Parse current tags into list
@@ -438,14 +440,13 @@ namespace ShopifyTagUpdater
             string currentTags = GetDeserializedItemString(jsonUpdateResults, "updateTags");
 
             // Log whether update was successful or not
-            if (testingMode == false)
+            if (valuesFromDB == true)
             {
-                // TODO: Remove from if/else once stored procedures created
                 LogUpdateTagsStatus(productId, statusInd, callStatus, errorMessage);
             }
             else
             {
-                Console.WriteLine(String.Format("Test Log Update Here: {0}, {1}, {2}, {3}", productId, statusInd, callStatus, errorMessage));
+                Console.WriteLine(String.Format("Test Log for Updating Tags: {0}, {1}, {2}, {3}", productId, statusInd, callStatus, errorMessage));
             }
 
             Console.WriteLine($"Product for id: {productId}, updated with tags: {currentTags}");
